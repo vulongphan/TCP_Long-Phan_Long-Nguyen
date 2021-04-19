@@ -58,7 +58,7 @@ void resend_packets(int sig)
             // make the pkt to send
             sndpkt = make_packet(len);
             memcpy(sndpkt->data, buffer, len);
-            sndpkt->hdr.seqno = next_seqno;
+            sndpkt->hdr.seqno = i;
             VLOG(DEBUG, "Sending packet of sequence number %d of data size %d to %s",
                  i, len, inet_ntoa(serveraddr.sin_addr));
 
