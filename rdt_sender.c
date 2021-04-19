@@ -214,6 +214,7 @@ int main(int argc, char **argv)
         assert(get_data_size(recvpkt) <= DATA_SIZE);
 
         // if receive ack for last pkt
+        // exit program
         if (recvpkt->hdr.ackno < exp_seqno) {
             printf("All packets sent successfully\n");
             stop_timer();
