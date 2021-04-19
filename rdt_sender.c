@@ -33,6 +33,12 @@ tcp_packet *sndpkt;
 tcp_packet *recvpkt;
 sigset_t sigmask;
 
+void resend_packets(int sig);
+void init_timer(int delay, void (*sig_handler)(int));
+void start_timer();
+void stop_timer();
+
+
 void resend_packets(int sig)
 {
     char buffer[DATA_SIZE];
