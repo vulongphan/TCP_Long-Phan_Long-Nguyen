@@ -60,7 +60,7 @@ void resend_packets(int sig)
             memcpy(sndpkt->data, buffer, len);
             sndpkt->hdr.seqno = next_seqno;
             VLOG(DEBUG, "Sending packet of sequence number %d of data size %d to %s",
-                 next_seqno, len, inet_ntoa(serveraddr.sin_addr));
+                 i, len, inet_ntoa(serveraddr.sin_addr));
 
             if (sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
                        (const struct sockaddr *)&serveraddr, serverlen) < 0)
@@ -142,8 +142,6 @@ int main(int argc, char **argv)
     serveraddr.sin_port = htons(portno);
 
     assert(MSS_SIZE - TCP_HDR_SIZE > 0);
-
-    //Stop and wait protocol
 
     init_timer(RETRY, resend_packets);
     next_seqno = 0;
