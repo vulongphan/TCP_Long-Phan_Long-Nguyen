@@ -151,6 +151,7 @@ int main(int argc, char **argv)
 
     while (1)
     {
+        // send all pkts in the effective window
         while (next_seqno < send_base + window_size * DATA_SIZE)
         {
             printf("---------------------------------------------------------------------------------\n");
@@ -196,9 +197,6 @@ int main(int argc, char **argv)
             free(sndpkt);
             printf("---------------------------------------------------------------------------------\n");
         }
-
-        // if timer not started then start it
-        start_timer();
 
         printf("Expected sequence number: %d \n", exp_seqno);
 
