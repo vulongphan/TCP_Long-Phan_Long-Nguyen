@@ -117,7 +117,7 @@ int main(int argc, char **argv)
         next_seqno = recvpkt->hdr.seqno + recvpkt->hdr.data_size;
 
         // if there is no gap in the order of the pkts received
-        if (next_seqno - cur_seqno <= DATA_SIZE)
+        if (next_seqno - cur_seqno <= DATA_SIZE && next_seqno - cur_seqno != 0)
         { 
             cur_seqno = next_seqno; // update current sequence number
 

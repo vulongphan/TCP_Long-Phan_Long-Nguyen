@@ -22,6 +22,7 @@ int exp_seqno;  // expected byte to be acked
 int send_base = 0;  // first byte in the window
 int window_size = 10;
 
+int timer_on = 0;
 FILE *fp;
 int len;
 
@@ -41,6 +42,7 @@ void resend_packets(int sig)
         //Resend all packets range between
         //sendBase and next_seqno
         VLOG(INFO, "Timeout happened");
+        start_timer();
         for (int i = send_base; i <= next_seqno; i += DATA_SIZE)
         {
             // locate the pointer to be read at next_seqno
@@ -67,11 +69,13 @@ void start_timer()
 {
     sigprocmask(SIG_UNBLOCK, &sigmask, NULL);
     setitimer(ITIMER_REAL, &timer, NULL);
+    timer_on = 1;
 }
 
 void stop_timer()
 {
     sigprocmask(SIG_BLOCK, &sigmask, NULL);
+    timer_on = 0;
 }
 
 /*
@@ -145,6 +149,9 @@ int main(int argc, char **argv)
         {
             printf("---------------------------------------------------------------------------------\n");
 
+            // start the timer if not alr started
+            if (timer_on == 0) start_timer();
+
             printf("current send_base: %d \n", send_base);
 
             // locate the pointer to be read at next_seqno
@@ -207,6 +214,7 @@ int main(int argc, char **argv)
         // if receive ack for last pkt
         if (recvpkt->hdr.ackno < exp_seqno) {
             printf("All packets sent successfully\n");
+            stop_timer();
             break;
         }
 
