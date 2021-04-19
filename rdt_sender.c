@@ -17,10 +17,13 @@
 #define STDIN_FD 0
 #define RETRY 120 //milli second
 
-int next_seqno = 0; // next byte to send
-int exp_seqno = 0; // expected byte to be acked 
-int send_base = 0; // first byte in the window
+int next_seqno; // next byte to send
+int exp_seqno;  // expected byte to be acked
+int send_base = 0;  // first byte in the window
 int window_size = 10;
+
+FILE *fp;
+int len;
 
 int sockfd, serverlen;
 struct sockaddr_in serveraddr;
@@ -31,15 +34,31 @@ sigset_t sigmask;
 
 void resend_packets(int sig)
 {
+    char buffer[DATA_SIZE];
+
     if (sig == SIGALRM)
     {
         //Resend all packets range between
-        //sendBase and nextSeqNum
-        VLOG(INFO, "Timout happend");
-        if (sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
-                   (const struct sockaddr *)&serveraddr, serverlen) < 0)
+        //sendBase and next_seqno
+        VLOG(INFO, "Timeout happened");
+        for (int i = send_base; i <= next_seqno; i += DATA_SIZE)
         {
-            error("sendto");
+            // locate the pointer to be read at next_seqno
+            fseek(fp, i, SEEK_SET);
+            // read bytes from fp to buffer
+            len = fread(buffer, 1, DATA_SIZE, fp);
+            // make the pkt to send
+            sndpkt = make_packet(len);
+            memcpy(sndpkt->data, buffer, len);
+            sndpkt->hdr.seqno = next_seqno;
+            VLOG(DEBUG, "Sending packet of sequence number %d of data size %d to %s",
+                 next_seqno, len, inet_ntoa(serveraddr.sin_addr));
+
+            if (sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
+                       (const struct sockaddr *)&serveraddr, serverlen) < 0)
+            {
+                error("sendto");
+            }
         }
     }
 }
@@ -74,11 +93,9 @@ void init_timer(int delay, void (*sig_handler)(int))
 
 int main(int argc, char **argv)
 {
-    int portno, len;
-    int next_seqno;
+    int portno;
     char *hostname;
     char buffer[DATA_SIZE];
-    FILE *fp;
 
     /* check command line arguments */
     if (argc != 4)
@@ -120,31 +137,30 @@ int main(int argc, char **argv)
 
     init_timer(RETRY, resend_packets);
     next_seqno = 0;
-    long sequence[window_size]; 
-    int seqno_ind = 0;
-    int exp_seqno_ind = 1;
+    exp_seqno = DATA_SIZE;
+
     while (1)
     {
-        printf("------------------------------------------\n");
-        // we will need to keep an order of all the bytes sent in the window by using an array of size = window size
-        // this way the expected byte number can be updated using this array 
-        while (next_seqno < send_base + window_size * DATA_SIZE && next_seqno >= send_base)
+        while (next_seqno < send_base + window_size * DATA_SIZE)
         {
-            // populate the sequence array
-            sequence[seqno_ind] = next_seqno;
-            printf("next_seqno to send: %d \n", next_seqno);
+            printf("---------------------------------------------------------------------------------\n");
+
             printf("current send_base: %d \n", send_base);
-            // locate the pointer to be read at next_seqno 
+
+            // locate the pointer to be read at next_seqno
             fseek(fp, next_seqno, SEEK_SET);
             // read bytes from fp to buffer
             len = fread(buffer, 1, DATA_SIZE, fp);
             // if end of file
             if (len <= 0)
             {
-                VLOG(INFO, "End Of File has been reached");
+                VLOG(INFO, "End Of File read");
                 sndpkt = make_packet(0);
+                VLOG(DEBUG, "Sending packet of sequence number %d of data size %d to %s",
+                     next_seqno, len, inet_ntoa(serveraddr.sin_addr));
                 sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0,
                        (const struct sockaddr *)&serveraddr, serverlen);
+                printf("-------------------------------------------------------------------------------\n");
                 break;
             }
 
@@ -152,35 +168,26 @@ int main(int argc, char **argv)
             sndpkt = make_packet(len);
             memcpy(sndpkt->data, buffer, len);
             sndpkt->hdr.seqno = next_seqno;
-            VLOG(DEBUG, "Sending packet %d to %s",
-                 next_seqno, inet_ntoa(serveraddr.sin_addr));
+            VLOG(DEBUG, "Sending packet of sequence number %d of data size %d to %s",
+                 next_seqno, len, inet_ntoa(serveraddr.sin_addr));
 
             if (sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
                        (const struct sockaddr *)&serveraddr, serverlen) < 0)
             {
                 error("sendto");
             }
-            // if timer not started then start it
-            start_timer();
 
-            // increment index of the sequence array if the current pkt is not the last one in the window
-            if (seqno_ind < window_size-1) seqno_ind += 1;
             // increment the next sequence number to be sent
             next_seqno += len;
 
             free(sndpkt);
-
-            // last pkt of the file to be sent that has len < DATA_SIZE
-            if (len < DATA_SIZE) break;
+            printf("---------------------------------------------------------------------------------\n");
         }
 
-        exp_seqno = sequence[exp_seqno_ind];
+        // if timer not started then start it
+        start_timer();
+
         printf("Expected sequence number: %d \n", exp_seqno);
-        printf("Sequence array of the window: \n");
-        for (int i = 0; i < window_size; i++) {
-            printf("%ld ",sequence[i]);
-        };
-        printf("\n");
 
         // wait for ACK
         if (recvfrom(sockfd, buffer, MSS_SIZE, 0,
@@ -191,28 +198,29 @@ int main(int argc, char **argv)
 
         // make recv pkt
         recvpkt = (tcp_packet *)buffer;
+
         // printf("%d \n", get_data_size(recvpkt));
         printf("ACK from receiver: %d \n", recvpkt->hdr.ackno);
-        
-        assert(get_data_size(recvpkt) <= DATA_SIZE);
-        stop_timer();
 
-        // check the ack nb from the receiver for a timeout
-        if (recvpkt->hdr.ackno != exp_seqno) {
-            // if the expected pkt is timeout, resent all packets starting from send_base
-            next_seqno = send_base;
-            continue;
+        assert(get_data_size(recvpkt) <= DATA_SIZE);
+
+        // if receive ack for last pkt
+        if (recvpkt->hdr.ackno < exp_seqno) {
+            printf("All packets sent successfully\n");
+            break;
         }
 
-        // in case the pkt is received correctly (recvpkt->hdr.ackno == exp_seqno)
-        send_base += DATA_SIZE; // slide window forward
-        // exp_seqno_ind += 1; // the expected sequence number is the next element in the sequence array
-        
-        // we need to delete the starting byte number of the successfully received pkt (which is the first element in the sequence array)
-        for (int i = 0; i < window_size-1; i++) {
-            sequence[i] = sequence[i+1];
-        }  
-
+        // if ACK number from the receiver is greater than the expected sequence number then move the window to the new position
+        // start timer if there are still unacked pkts in the window
+        if (exp_seqno <= recvpkt->hdr.ackno)
+        {
+            send_base = recvpkt->hdr.ackno;
+            exp_seqno = send_base + DATA_SIZE;
+            stop_timer();
+            // start timer for unacked pkts
+            if (send_base < next_seqno)
+                start_timer();
+        }
     }
     return 0;
 }
