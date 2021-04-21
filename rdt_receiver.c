@@ -102,12 +102,11 @@ int main(int argc, char **argv)
         }
         recvpkt = (tcp_packet *)buffer;
         assert(get_data_size(recvpkt) <= DATA_SIZE);
-        // if (recvpkt->hdr.data_size == 0)
-        // {
-        //     //VLOG(INFO, "End Of File has been reached");
-        //     fclose(fp);
-        //     break;
-        // }
+        if (recvpkt->hdr.data_size == 0)
+        {
+            //VLOG(INFO, "End Of File has been reached");
+            continue;
+        }
         /* 
          * sendto: ACK back to the client 
          */
@@ -117,12 +116,15 @@ int main(int argc, char **argv)
         next_seqno = recvpkt->hdr.seqno + recvpkt->hdr.data_size;
 
         // if there is no gap in the order of the pkts received
-        if (next_seqno - cur_seqno <= DATA_SIZE)
+        if (next_seqno - cur_seqno <= DATA_SIZE && next_seqno > cur_seqno)
         { 
             cur_seqno = next_seqno; // update current sequence number
 
+            fp = fopen(argv[2], "a");
             fseek(fp, recvpkt->hdr.seqno, SEEK_SET);
             fwrite(recvpkt->data, 1, recvpkt->hdr.data_size, fp);
+            fclose(fp);
+            printf("pkt with sequence number %d written to file\n", recvpkt->hdr.seqno);
             sndpkt = make_packet(0);
             sndpkt->hdr.ackno = recvpkt->hdr.seqno + recvpkt->hdr.data_size;
             sndpkt->hdr.ctr_flags = ACK;
