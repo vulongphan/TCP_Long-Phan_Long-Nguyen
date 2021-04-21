@@ -15,7 +15,7 @@
 #include "common.h"
 
 #define STDIN_FD 0
-#define RETRY 120 //milli second
+#define RETRY 200 //milli second
 
 int next_seqno; // next byte to send
 int exp_seqno;  // expected byte to be acked
@@ -48,8 +48,8 @@ void resend_packets(int sig)
         //Resend all packets range between
         //sendBase and next_seqno
         VLOG(INFO, "Timeout happened");
-        start_timer();
-        for (int i = send_base; i <= next_seqno; i += DATA_SIZE)
+        // start_timer();
+        for (int i = send_base; i < next_seqno; i += DATA_SIZE)
         {
             // locate the pointer to be read at next_seqno
             fseek(fp, i, SEEK_SET);
@@ -76,12 +76,14 @@ void start_timer()
     sigprocmask(SIG_UNBLOCK, &sigmask, NULL);
     setitimer(ITIMER_REAL, &timer, NULL);
     timer_on = 1;
+    printf("Timer on\n");
 }
 
 void stop_timer()
 {
     sigprocmask(SIG_BLOCK, &sigmask, NULL);
     timer_on = 0;
+    printf("Timer off\n");
 }
 
 /*
@@ -143,7 +145,9 @@ int main(int argc, char **argv)
 
     assert(MSS_SIZE - TCP_HDR_SIZE > 0);
 
+    // init timer
     init_timer(RETRY, resend_packets);
+
     next_seqno = 0;
     exp_seqno = DATA_SIZE;
 
@@ -168,8 +172,6 @@ int main(int argc, char **argv)
             {
                 VLOG(INFO, "End Of File read");
                 sndpkt = make_packet(0);
-                VLOG(DEBUG, "Sending packet of sequence number %d of data size %d to %s",
-                     next_seqno, len, inet_ntoa(serveraddr.sin_addr));
                 sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0,
                        (const struct sockaddr *)&serveraddr, serverlen);
                 printf("-------------------------------------------------------------------------------\n");
