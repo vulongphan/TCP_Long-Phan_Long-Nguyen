@@ -105,7 +105,6 @@ int main(int argc, char **argv)
         if (recvpkt->hdr.data_size == 0)
         {
             //VLOG(INFO, "End Of File has been reached");
-            fclose(fp);
             continue;
         }
         /* 
@@ -121,8 +120,10 @@ int main(int argc, char **argv)
         { 
             cur_seqno = next_seqno; // update current sequence number
 
+            fp = fopen(argv[2], "a");
             fseek(fp, recvpkt->hdr.seqno, SEEK_SET);
             fwrite(recvpkt->data, 1, recvpkt->hdr.data_size, fp);
+            fclose(fp);
             printf("pkt with sequence number %d written to file\n", recvpkt->hdr.seqno);
             sndpkt = make_packet(0);
             sndpkt->hdr.ackno = recvpkt->hdr.seqno + recvpkt->hdr.data_size;
