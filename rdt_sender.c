@@ -109,6 +109,8 @@ int main(int argc, char **argv)
     char *hostname;
     char buffer[DATA_SIZE];
 
+    int FIN = 0;
+
     /* check command line arguments */
     if (argc != 4)
     {
@@ -216,8 +218,7 @@ int main(int argc, char **argv)
         assert(get_data_size(recvpkt) <= DATA_SIZE);
 
         // if receive ack for last pkt
-        // exit program
-        if (recvpkt->hdr.ackno < exp_seqno) {
+        if (recvpkt->hdr.data_size == 0 && recvpkt->hdr.ctr_flags == FIN) {
             printf("All packets sent successfully\n");
             stop_timer();
             break;
