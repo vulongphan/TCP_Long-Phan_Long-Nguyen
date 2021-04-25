@@ -24,24 +24,39 @@ int window_size = 10;
 
 int timer_on = 0;
 FILE *fp;
-int len;
+
 
 int sockfd, serverlen;
 struct sockaddr_in serveraddr;
 struct itimerval timer;
-tcp_packet *sndpkt;
 tcp_packet *recvpkt;
 sigset_t sigmask;
 
+void send_packet(char* buffer, int len, int seqno);
 void resend_packets(int sig);
 void init_timer(int delay, void (*sig_handler)(int));
 void start_timer();
 void stop_timer();
 
+void send_packet(char* buffer, int len, int seqno) {
+    tcp_packet *sndpkt = make_packet(len);
+    memcpy(sndpkt->data, buffer, len);
+    sndpkt->hdr.seqno = seqno;
+    VLOG(DEBUG, "Sending packet of sequence number %d of data size %d to %s",
+                 seqno, len, inet_ntoa(serveraddr.sin_addr));
+    if (sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
+                       (const struct sockaddr *)&serveraddr, serverlen) < 0)
+    {
+        error("sendto");
+    }
+    free(sndpkt);
+}
+
 
 void resend_packets(int sig)
 {
     char buffer[DATA_SIZE];
+    int len;
 
     if (sig == SIGALRM)
     {
@@ -55,18 +70,8 @@ void resend_packets(int sig)
             fseek(fp, i, SEEK_SET);
             // read bytes from fp to buffer
             len = fread(buffer, 1, DATA_SIZE, fp);
-            // make the pkt to send
-            sndpkt = make_packet(len);
-            memcpy(sndpkt->data, buffer, len);
-            sndpkt->hdr.seqno = i;
-            VLOG(DEBUG, "Sending packet of sequence number %d of data size %d to %s",
-                 i, len, inet_ntoa(serveraddr.sin_addr));
-
-            if (sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
-                       (const struct sockaddr *)&serveraddr, serverlen) < 0)
-            {
-                error("sendto");
-            }
+            // send pkt
+            send_packet(buffer, len, i);
         }
     }
 }
@@ -108,6 +113,7 @@ int main(int argc, char **argv)
     int portno;
     char *hostname;
     char buffer[DATA_SIZE];
+    int len;
 
     /* check command line arguments */
     if (argc != 4)
@@ -171,30 +177,16 @@ int main(int argc, char **argv)
             if (len <= 0)
             {
                 VLOG(INFO, "End Of File read");
-                sndpkt = make_packet(0);
-                sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0,
-                       (const struct sockaddr *)&serveraddr, serverlen);
+                send_packet(buffer, 0, 0);
                 printf("-------------------------------------------------------------------------------\n");
                 break;
             }
 
-            // make the pkt to send
-            sndpkt = make_packet(len);
-            memcpy(sndpkt->data, buffer, len);
-            sndpkt->hdr.seqno = next_seqno;
-            VLOG(DEBUG, "Sending packet of sequence number %d of data size %d to %s",
-                 next_seqno, len, inet_ntoa(serveraddr.sin_addr));
-
-            if (sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
-                       (const struct sockaddr *)&serveraddr, serverlen) < 0)
-            {
-                error("sendto");
-            }
+            // send pkt
+            send_packet(buffer, len, next_seqno);
 
             // increment the next sequence number to be sent
             next_seqno += len;
-
-            free(sndpkt);
             printf("---------------------------------------------------------------------------------\n");
         }
 
