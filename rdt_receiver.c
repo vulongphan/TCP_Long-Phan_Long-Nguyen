@@ -35,8 +35,6 @@ int main(int argc, char **argv)
     int cur_seqno;
     int next_seqno;
 
-    int FIN = -1; /* flag value of end of file transimission*/
-
     /* 
      * check command line arguments 
      */
@@ -117,57 +115,19 @@ int main(int argc, char **argv)
 
         next_seqno = recvpkt->hdr.seqno + recvpkt->hdr.data_size;
 
-        // handle in-order pkts 
-        if (next_seqno - cur_seqno == DATA_SIZE)
+        // if there is no gap in the order of the pkts received
+        if (next_seqno - cur_seqno <= DATA_SIZE)
         { 
             cur_seqno = next_seqno; // update current sequence number
 
-            fp = fopen(argv[2], "a");
+            fp = fopen(argv[2], "r+");
             fseek(fp, recvpkt->hdr.seqno, SEEK_SET);
             fwrite(recvpkt->data, 1, recvpkt->hdr.data_size, fp);
             fclose(fp);
-            printf("pkt with sequence number %d written to file\n", recvpkt->hdr.seqno);
+            printf("pkt with sequence number %d, data_size %d, written to file\n", recvpkt->hdr.seqno, recvpkt->hdr.data_size);
             sndpkt = make_packet(0);
             sndpkt->hdr.ackno = recvpkt->hdr.seqno + recvpkt->hdr.data_size;
             sndpkt->hdr.ctr_flags = ACK;
-            if (sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0,
-                       (struct sockaddr *)&clientaddr, clientlen) < 0)
-            {
-                error("ERROR in sendto");
-            }
-        }
-
-        // handle duplicate pkts 
-        else if (next_seqno - cur_seqno == 0) {
-            sndpkt = make_packet(0);
-            sndpkt->hdr.ackno = recvpkt->hdr.seqno + recvpkt->hdr.data_size;
-            // for FIN pkt
-            if (FIN == 0) {
-                sndpkt->hdr.ctr_flags = FIN;
-                
-            }
-            else if (FIN == -1) {
-                sndpkt->hdr.ctr_flags = ACK;
-            }
-            if (sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0,
-                           (struct sockaddr *)&clientaddr, clientlen) < 0)
-            {
-                error("ERROR in sendto");
-            }
-        }
-        // the last pkt of the file is received, send FIN
-        else if (next_seqno - cur_seqno < DATA_SIZE && next_seqno - cur_seqno > 0) {
-            FIN = 0;
-            cur_seqno = next_seqno; // update current sequence number
-
-            fp = fopen(argv[2], "a");
-            fseek(fp, recvpkt->hdr.seqno, SEEK_SET);
-            fwrite(recvpkt->data, 1, recvpkt->hdr.data_size, fp);
-            fclose(fp);
-            printf("pkt with sequence number %d written to file\n", recvpkt->hdr.seqno);
-            sndpkt = make_packet(0);
-            sndpkt->hdr.ackno = recvpkt->hdr.seqno + recvpkt->hdr.data_size;
-            sndpkt->hdr.ctr_flags = FIN;
             if (sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0,
                        (struct sockaddr *)&clientaddr, clientlen) < 0)
             {
