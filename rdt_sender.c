@@ -14,13 +14,15 @@
 #include "packet.h"
 #include "common.h"
 
+#define max(x,y) (((x) >= (y)) ? (x) : (y))
+
 #define STDIN_FD 0
 #define RETRY 200 //milli second
 
 int next_seqno; // next byte to send
 int exp_seqno;  // expected byte to be acked
 int send_base = 0;  // first byte in the window
-int window_size = 1; // window size at the beginning of slow start
+float window_size = 1; // window size at the beginning of slow start
 int ssthresh = 64; // initial value for slow start threshold
 int cong_state = 0; // intially cong_state sets to 0 which means slow start
 
@@ -47,7 +49,7 @@ void transit() {
 
 void increment_window() {
     if (cong_state == 0) window_size += 1; // state == 0 is slow start
-    if (cong_state == 1) window_size += 1/float(window_size); // state == 1 is congestion avoidance 
+    if (cong_state == 1) window_size += 1/window_size; // state == 1 is congestion avoidance 
     printf("Window size incremented, current window_size: %f \n", window_size);
 }
 
