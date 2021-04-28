@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include <assert.h>
+#include <math.h>
 
 #include "packet.h"
 #include "common.h"
@@ -23,7 +24,7 @@ int next_seqno; // next byte to send
 int exp_seqno;  // expected byte to be acked
 int send_base = 0;  // first byte in the window
 float window_size = 1; // window size at the beginning of slow start
-int ssthresh = 64; // initial value for slow start threshold
+float ssthresh = 64; // initial value for slow start threshold
 int cong_state = 0; // intially cong_state sets to 0 which means slow start
 
 int timer_on = 0;
@@ -43,14 +44,35 @@ void init_timer(int delay, void (*sig_handler)(int));
 void start_timer();
 void stop_timer();
 
-void transit() {
-
+void transit(){
+    if (cong_state == 0) {
+        ssthresh = (int)max(window_size/2, 2); // ssthresh set to half the previous value of the window size
+        window_size = 1;
+        printf("In Slow Start, return to Slow Start mode\n");
+        printf("Current window_size: %f\n", window_size);
+        printf("Current ssthresh: %f\n", ssthresh);
+    }
+    else if (cong_state == 1) {
+        ssthresh = (int)max(window_size/2, 2); // ssthresh set to half the previous value of the window size
+        window_size = 1;
+        cong_state = 0;
+        printf("In Congestion Avoidance mode, entering Slow Start\n");
+        printf("Current window_size: %f\n", window_size);
+        printf("Current ssthresh: %f\n", ssthresh);
+    }
 }
 
 void increment_window() {
-    if (cong_state == 0) window_size += 1; // state == 0 is slow start
-    if (cong_state == 1) window_size += 1/window_size; // state == 1 is congestion avoidance 
-    printf("Window size incremented, current window_size: %f \n", window_size);
+    if (cong_state == 0) { // in slow start
+        if (window_size == ssthresh-1) {
+            cong_state = 1;
+            printf("Window size reaches ssthresh, In Slow Start and Entering Congestion Avoidance mode\n");
+        }
+        else window_size += 1; 
+    } 
+    
+    else if (cong_state == 1) window_size += 1/window_size; // in congestion avoidance
+    printf("Current window_size: %f\n", window_size);
 }
 
 void send_packet(char* buffer, int len, int seqno) {
@@ -75,18 +97,12 @@ void resend_packets(int sig)
 
     if (sig == SIGALRM)
     {
-        //Resend all packets range between
-        //send_base and next_seqno
-
         VLOG(INFO, "Timeout happened");
-        if (cong_state == 1) { // in congestion avoidance mode, entering slow start
-            printf("In Congestion Avoidance mode, entering Slow Start\n");
-            ssthresh = max(window_size/2, 2); // ssthresh set to half its previous value
-            window_size = 1;
-            cong_state = 0;
-        }
+
+        transit();
         
-        // start_timer();
+        //resend all packets range between send_base and next_seqno
+
         for (int i = send_base; i < next_seqno; i += DATA_SIZE)
         {
             // locate the pointer to be read at next_seqno
@@ -186,9 +202,10 @@ int main(int argc, char **argv)
     while (1)
     {
         // send all pkts in the effective window
-        while (next_seqno < send_base + window_size * DATA_SIZE)
+        printf("..Sending packets in the effective window ..\n");
+        while (next_seqno < send_base + (int)(window_size) * DATA_SIZE)
         {
-            printf("---------------------------------------------------------------------------------\n");
+            printf("*\n");
 
             // start the timer if not alr started
             if (timer_on == 0) start_timer();
@@ -204,7 +221,7 @@ int main(int argc, char **argv)
             {
                 VLOG(INFO, "End Of File read");
                 send_packet(buffer, 0, 0);
-                printf("-------------------------------------------------------------------------------\n");
+                printf("*\n");
                 break;
             }
 
@@ -213,10 +230,13 @@ int main(int argc, char **argv)
 
             // increment the next sequence number to be sent
             next_seqno += len;
-            printf("---------------------------------------------------------------------------------\n");
+            printf("*\n");
         }
+        printf(".. Finish sending packets in effective window ..\n");
 
-        printf("Expected sequence number: %d \n", exp_seqno);
+        printf("Sequence number expected: %d \n", exp_seqno);
+
+        printf("Waiting for ACK from receiver...\n");
 
         // wait for ACK
         if (recvfrom(sockfd, buffer, MSS_SIZE, 0,
@@ -237,12 +257,12 @@ int main(int argc, char **argv)
         increment_window();
         if (window_size == ssthresh && cong_state == 0) {
             cong_state = 1;
-            printf("Window size reaches ssthresh, In Slow Start and Entering Congestion Avoidance mode\n");
+            printf("***Window size reaches ssthresh, In Slow Start and Entering Congestion Avoidance mode\n");
         }
 
         // if receive ack for last pkt
         if (recvpkt->hdr.ackno % DATA_SIZE > 0) {
-            printf("All packets sent successfully\n");
+            printf("***All packets sent successfully\n");
             stop_timer();
             break;
         }
@@ -251,18 +271,8 @@ int main(int argc, char **argv)
             // printf("1 more dup ACK with ackno = %d received!\n", recvpkt->hdr.ackno);
             dup_cnt += 1;
             if (dup_cnt == 3) {
-                printf("3 dup ACKs received, with ackno = %d, packet loss detected!\n", recvpkt->hdr.ackno);
-                if (cong_state == 0){ // if in slow start, enter Congestion Avoidance mode
-                    cong_state = 1;
-                    ssthresh = max(window_size/2, 2); // ssthresh set to half its previous value
-                    printf("In Slow Start, enter Congestion Avoidance mode\n");
-                }
-                else if (cong_state == 1) { // if in congestion avoidance, enter slow start
-                    printf("In Congestion Avoidance mode, entering Slow Start\n");
-                    ssthresh = max(window_size/2, 2); // ssthresh set to half its previous value
-                    window_size = 1;
-                    cong_state = 0;
-                }       
+                printf("***3 dup ACKs received, with ackno = %d, packet loss detected!\n", recvpkt->hdr.ackno);     
+                transit();
             }
         }
 

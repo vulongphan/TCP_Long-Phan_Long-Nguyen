@@ -185,6 +185,7 @@ int main(int argc, char **argv)
             if (ind < buffer_size-1) {
                 ind += 1;
                 buffer_pkts[ind] = recvpkt;
+                
                 printf("Out-of-order pkt sequence %d buffered at index %d \n", buffer_pkts[ind]->hdr.seqno, ind);
                 
             }
