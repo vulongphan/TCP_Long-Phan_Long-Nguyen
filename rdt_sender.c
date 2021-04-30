@@ -48,37 +48,38 @@ void transit(){
     if (cong_state == 0) {
         ssthresh = (int)max(window_size/2, 2); // ssthresh set to half the previous value of the window size
         window_size = 1;
-        printf("In Slow Start, return to Slow Start mode\n");
-        printf("Current window_size: %f\n", window_size);
-        printf("Current ssthresh: %f\n", ssthresh);
+        printf("* In Slow Start, return to Slow Start mode\n");
+        printf("---- Current window_size: %f\n", window_size);
+        printf("---- Current ssthresh: %f\n", ssthresh);
     }
     else if (cong_state == 1) {
         ssthresh = (int)max(window_size/2, 2); // ssthresh set to half the previous value of the window size
         window_size = 1;
         cong_state = 0;
-        printf("In Congestion Avoidance mode, entering Slow Start\n");
-        printf("Current window_size: %f\n", window_size);
-        printf("Current ssthresh: %f\n", ssthresh);
+        printf("* In Congestion Avoidance mode, entering Slow Start\n");
+        printf("---- Current window_size: %f\n", window_size);
+        printf("---- Current ssthresh: %f\n", ssthresh);
     }
 }
 
 void increment_window() {
     if (cong_state == 0) { // in slow start
-        if (window_size == ssthresh-1) {
+        window_size += 1; 
+        if (window_size == ssthresh) {
             cong_state = 1;
             printf("Window size reaches ssthresh, In Slow Start and Entering Congestion Avoidance mode\n");
         }
-        else window_size += 1; 
     } 
     
     else if (cong_state == 1) window_size += 1.0/(int)window_size; // in congestion avoidance
-    printf("Current window_size: %f\n", window_size);
+    printf("---- Current window_size: %f\n", window_size);
 }
 
 void send_packet(char* buffer, int len, int seqno) {
     tcp_packet *sndpkt = make_packet(len);
     memcpy(sndpkt->data, buffer, len);
     sndpkt->hdr.seqno = seqno;
+    printf("****************************************************************\n");
     VLOG(DEBUG, "Sending packet of sequence number %d of data size %d to %s",
                  seqno, len, inet_ntoa(serveraddr.sin_addr));
     if (sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
@@ -87,6 +88,7 @@ void send_packet(char* buffer, int len, int seqno) {
         error("sendto");
     }
     free(sndpkt);
+    printf("****************************************************************\n");
 }
 
 
@@ -155,6 +157,10 @@ int main(int argc, char **argv)
     int len;
     int dup_cnt; // count of continuous duplicate ACKs
 
+    FILE* plot; // file that contains plot of window_size, ssthresh and time
+    // time_t now, start;
+    struct timeval start, now;
+
     /* check command line arguments */
     if (argc != 4)
     {
@@ -199,18 +205,24 @@ int main(int argc, char **argv)
 
     dup_cnt = 1;
 
+    plot = fopen("plot.csv", "w");
+    // start = time(0);
+    gettimeofday(&start,NULL);
+
     while (1)
     {
+        // now = time(0);
+        gettimeofday(&now,NULL);
+        fprintf(plot, "%f %f %lu \n", window_size, ssthresh, (now.tv_sec-start.tv_sec)*1000000 + (now.tv_usec-start.tv_usec));
+
         // send all pkts in the effective window
-        printf("..Sending packets in the effective window ..\n");
+        printf("*** Sending packets in the effective window ..\n");
         while (next_seqno < send_base + (int)(window_size) * DATA_SIZE)
         {
-            printf("*\n");
-
             // start the timer if not alr started
             if (timer_on == 0) start_timer();
 
-            printf("current send_base: %d \n", send_base);
+            // printf("current send_base: %d \n", send_base);
 
             // locate the pointer to be read at next_seqno
             fseek(fp, next_seqno, SEEK_SET);
@@ -221,7 +233,6 @@ int main(int argc, char **argv)
             {
                 VLOG(INFO, "End Of File read");
                 send_packet(buffer, 0, 0);
-                printf("*\n");
                 break;
             }
 
@@ -230,9 +241,8 @@ int main(int argc, char **argv)
 
             // increment the next sequence number to be sent
             next_seqno += len;
-            printf("*\n");
         }
-        printf(".. Finish sending packets in effective window ..\n");
+        // printf("*** Finish sending packets in effective window ..\n");
 
         printf("Sequence number expected: %d \n", exp_seqno);
 
@@ -289,5 +299,6 @@ int main(int argc, char **argv)
                 start_timer();
         }
     }
+    fclose(plot);
     return 0;
 }
