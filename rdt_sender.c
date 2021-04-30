@@ -71,7 +71,7 @@ void increment_window() {
         else window_size += 1; 
     } 
     
-    else if (cong_state == 1) window_size += 1/window_size; // in congestion avoidance
+    else if (cong_state == 1) window_size += 1.0/(int)window_size; // in congestion avoidance
     printf("Current window_size: %f\n", window_size);
 }
 
