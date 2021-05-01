@@ -205,13 +205,11 @@ int main(int argc, char **argv)
 
     dup_cnt = 1;
 
-    plot = fopen("plot.csv", "w");
-    // start = time(0);
+    plot = fopen("CWND.csv", "w");
     gettimeofday(&start,NULL);
 
     while (1)
     {
-        // now = time(0);
         gettimeofday(&now,NULL);
         fprintf(plot, "%f %f %lu \n", window_size, ssthresh, (now.tv_sec-start.tv_sec)*1000000 + (now.tv_usec-start.tv_usec));
 
