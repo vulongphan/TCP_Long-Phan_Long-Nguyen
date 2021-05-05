@@ -46,14 +46,14 @@ void stop_timer();
 
 void transit(){
     if (cong_state == 0) {
-        ssthresh = (int)max(window_size/2, 2); // ssthresh set to half the previous value of the window size
+        ssthresh = (float)max(window_size/2, 2); // ssthresh set to half the previous value of the window size
         window_size = 1;
         printf("* In Slow Start, return to Slow Start mode\n");
         printf("---- Current window_size: %f\n", window_size);
         printf("---- Current ssthresh: %f\n", ssthresh);
     }
     else if (cong_state == 1) {
-        ssthresh = (int)max(window_size/2, 2); // ssthresh set to half the previous value of the window size
+        ssthresh = (float)max(window_size/2, 2); // ssthresh set to half the previous value of the window size
         window_size = 1;
         cong_state = 0;
         printf("* In Congestion Avoidance mode, entering Slow Start\n");
@@ -205,13 +205,14 @@ int main(int argc, char **argv)
 
     dup_cnt = 1;
 
-    plot = fopen("CWND.csv", "w");
+    plot = fopen("CWND.csv", "w+");
+    // fprintf(plot,"window_size,  ssthresh, time");
     gettimeofday(&start,NULL);
 
     while (1)
     {
         gettimeofday(&now,NULL);
-        fprintf(plot, "%f %f %lu \n", window_size, ssthresh, (now.tv_sec-start.tv_sec)*1000000 + (now.tv_usec-start.tv_usec));
+        fprintf(plot, "%.2f %.2f %lu\n", window_size, ssthresh, (now.tv_sec-start.tv_sec)*1000000 + (now.tv_usec-start.tv_usec)   );
 
         // send all pkts in the effective window
         printf("*** Sending packets in the effective window ..\n");
