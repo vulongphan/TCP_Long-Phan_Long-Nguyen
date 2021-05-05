@@ -20,6 +20,7 @@
 #define STDIN_FD 0
 #define RETRY 200 //milli second
 
+int transmission_round = 0; //keep track of the round
 int next_seqno; // next byte to send
 int exp_seqno;  // expected byte to be acked
 int send_base = 0;  // first byte in the window
@@ -212,7 +213,8 @@ int main(int argc, char **argv)
     while (1)
     {
         gettimeofday(&now,NULL);
-        fprintf(plot, "%.2f %.2f %lu\n", window_size, ssthresh, (now.tv_sec-start.tv_sec)*1000000 + (now.tv_usec-start.tv_usec)   );
+        fprintf(plot, "%.2f %.2f %lu\n", window_size, ssthresh, (now.tv_sec-start.tv_sec)*1000000 + (now.tv_usec-start.tv_usec) /*transmission_round*/);
+        transmission_round++;
 
         // send all pkts in the effective window
         printf("*** Sending packets in the effective window ..\n");

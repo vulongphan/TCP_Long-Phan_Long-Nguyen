@@ -11,17 +11,7 @@ for l in lines:
 	l= l.split(' ')
 	cwnd.append(float(l[0]))
 	ssthresh.append(float(l[1]))
-	time.append(float(l[2]))
-
-#print(time)
-# fig, ax = plt.subplots()
-# ax2=plt.twinx()
-# ax.plot(time, cwnd, color="red",label='cwnd')
-# ax.set_ylabel('cwnd')
-# ax.set_xlabel('time')
-
-# ax2.plot(time,ssthresh, color="green", label="ssthresh")
-# ax2.set_ylabel('ssthresh')
+	time.append(int(l[2]))
 
 plt.plot(time,cwnd, color="red",label="cwnd")
 plt.axhline(y=ssthresh[0], xmin=0,xmax=time[1]/time[n-1], linestyle="--", label="ssthresh")
@@ -31,11 +21,10 @@ for i in range(1,len(ssthresh)):
 	x_last=time[i]
 	
 plt.ylabel("cwnd/ssthresh")
-plt.xlabel("time")
+plt.xlabel("tranmission round")
 plt.ylim(bottom=0)
-plt.xlim(left=0)
+plt.xlim(left=0,right=time[n-1])
 plt.title("cwnd and ssthresh over time")
-# ax.legend()
 plt.legend()
 plt.show()
 
