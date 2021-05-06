@@ -21,7 +21,7 @@ for i in range(1,len(ssthresh)):
 	x_last=time[i]
 	
 plt.ylabel("cwnd/ssthresh")
-plt.xlabel("tranmission round")
+plt.xlabel("time")
 plt.ylim(bottom=0)
 plt.xlim(left=0,right=time[n-1])
 plt.title("cwnd and ssthresh over time")

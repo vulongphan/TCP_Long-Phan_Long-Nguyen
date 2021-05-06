@@ -214,7 +214,7 @@ int main(int argc, char **argv)
     {
         gettimeofday(&now,NULL);
         fprintf(plot, "%.2f %.2f %lu\n", window_size, ssthresh, (now.tv_sec-start.tv_sec)*1000000 + (now.tv_usec-start.tv_usec) /*transmission_round*/);
-        transmission_round++;
+        // transmission_round++;
 
         // send all pkts in the effective window
         printf("*** Sending packets in the effective window ..\n");
