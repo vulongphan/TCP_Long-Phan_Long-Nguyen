@@ -7,7 +7,7 @@ SHELL = /bin/bash
 # compiling flags here
 CFLAGS = -Wall -I.
 
-LINKER = gcc -o
+LINKER = gcc -o 
 # linking flags here
 LFLAGS   = -Wall
 
@@ -27,11 +27,11 @@ TARGET:	$(OBJDIR) $(CLIENT)	$(SERVER)
 
 
 $(CLIENT):	$(CLIENT_OBJECTS)
-	$(LINKER)  $@  $(CLIENT_OBJECTS)
+	$(LINKER)  $@  $(CLIENT_OBJECTS) 
 	@echo "Link complete!"
 
 $(SERVER): $(SERVER_OBJECTS)
-	$(LINKER)  $@  $(SERVER_OBJECTS)
+	$(LINKER)  $@  $(SERVER_OBJECTS) 
 	@echo "Link complete!"
 
 $(OBJDIR)/%.o:	%.c common.h packet.h

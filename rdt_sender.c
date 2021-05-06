@@ -10,63 +10,109 @@
 #include <sys/time.h>
 #include <time.h>
 #include <assert.h>
+#include <math.h>
 
 #include "packet.h"
 #include "common.h"
 
+#define max(x,y) (((x) >= (y)) ? (x) : (y))
+
 #define STDIN_FD 0
-#define RETRY 120 //milli second
+#define RETRY 200 //milli second
 
 int next_seqno; // next byte to send
 int exp_seqno;  // expected byte to be acked
 int send_base = 0;  // first byte in the window
-int window_size = 10;
+float window_size = 1; // window size at the beginning of slow start
+float ssthresh = 64; // initial value for slow start threshold
+int cong_state = 0; // intially cong_state sets to 0 which means slow start
 
 int timer_on = 0;
 FILE *fp;
-int len;
 
 int sockfd, serverlen;
 struct sockaddr_in serveraddr;
 struct itimerval timer;
-tcp_packet *sndpkt;
 tcp_packet *recvpkt;
 sigset_t sigmask;
 
+void transit(); // transit sender between slow start and congestion avoidance
+void increment_window();
+void send_packet(char* buffer, int len, int seqno);
 void resend_packets(int sig);
 void init_timer(int delay, void (*sig_handler)(int));
 void start_timer();
 void stop_timer();
 
+void transit(){
+    if (cong_state == 0) {
+        ssthresh = (int)max(window_size/2, 2); // ssthresh set to half the previous value of the window size
+        window_size = 1;
+        printf("* In Slow Start, return to Slow Start mode\n");
+        printf("---- Current window_size: %f\n", window_size);
+        printf("---- Current ssthresh: %f\n", ssthresh);
+    }
+    else if (cong_state == 1) {
+        ssthresh = (int)max(window_size/2, 2); // ssthresh set to half the previous value of the window size
+        window_size = 1;
+        cong_state = 0;
+        printf("* In Congestion Avoidance mode, entering Slow Start\n");
+        printf("---- Current window_size: %f\n", window_size);
+        printf("---- Current ssthresh: %f\n", ssthresh);
+    }
+}
+
+void increment_window() {
+    if (cong_state == 0) { // in slow start
+        window_size += 1; 
+        if (window_size == ssthresh) {
+            cong_state = 1;
+            printf("Window size reaches ssthresh, In Slow Start and Entering Congestion Avoidance mode\n");
+        }
+    } 
+    
+    else if (cong_state == 1) window_size += 1.0/(int)window_size; // in congestion avoidance
+    printf("---- Current window_size: %f\n", window_size);
+}
+
+void send_packet(char* buffer, int len, int seqno) {
+    tcp_packet *sndpkt = make_packet(len);
+    memcpy(sndpkt->data, buffer, len);
+    sndpkt->hdr.seqno = seqno;
+    printf("****************************************************************\n");
+    VLOG(DEBUG, "Sending packet of sequence number %d of data size %d to %s",
+                 seqno, len, inet_ntoa(serveraddr.sin_addr));
+    if (sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
+                       (const struct sockaddr *)&serveraddr, serverlen) < 0)
+    {
+        error("sendto");
+    }
+    free(sndpkt);
+    printf("****************************************************************\n");
+}
+
 
 void resend_packets(int sig)
 {
     char buffer[DATA_SIZE];
+    int len;
 
     if (sig == SIGALRM)
     {
-        //Resend all packets range between
-        //sendBase and next_seqno
         VLOG(INFO, "Timeout happened");
-        start_timer();
-        for (int i = send_base; i <= next_seqno; i += DATA_SIZE)
+
+        transit();
+        
+        //resend all packets range between send_base and next_seqno
+
+        for (int i = send_base; i < next_seqno; i += DATA_SIZE)
         {
             // locate the pointer to be read at next_seqno
             fseek(fp, i, SEEK_SET);
             // read bytes from fp to buffer
             len = fread(buffer, 1, DATA_SIZE, fp);
-            // make the pkt to send
-            sndpkt = make_packet(len);
-            memcpy(sndpkt->data, buffer, len);
-            sndpkt->hdr.seqno = next_seqno;
-            VLOG(DEBUG, "Sending packet of sequence number %d of data size %d to %s",
-                 i, len, inet_ntoa(serveraddr.sin_addr));
-
-            if (sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
-                       (const struct sockaddr *)&serveraddr, serverlen) < 0)
-            {
-                error("sendto");
-            }
+            // send pkt
+            send_packet(buffer, len, i);
         }
     }
 }
@@ -76,12 +122,14 @@ void start_timer()
     sigprocmask(SIG_UNBLOCK, &sigmask, NULL);
     setitimer(ITIMER_REAL, &timer, NULL);
     timer_on = 1;
+    printf("Timer on\n");
 }
 
 void stop_timer()
 {
     sigprocmask(SIG_BLOCK, &sigmask, NULL);
     timer_on = 0;
+    printf("Timer off\n");
 }
 
 /*
@@ -106,6 +154,12 @@ int main(int argc, char **argv)
     int portno;
     char *hostname;
     char buffer[DATA_SIZE];
+    int len;
+    int dup_cnt; // count of continuous duplicate ACKs
+
+    FILE* plot; // file that contains plot of window_size, ssthresh and time
+    // time_t now, start;
+    struct timeval start, now;
 
     /* check command line arguments */
     if (argc != 4)
@@ -143,21 +197,30 @@ int main(int argc, char **argv)
 
     assert(MSS_SIZE - TCP_HDR_SIZE > 0);
 
+    // init timer
     init_timer(RETRY, resend_packets);
+
     next_seqno = 0;
     exp_seqno = DATA_SIZE;
 
+    dup_cnt = 1;
+
+    plot = fopen("CWND.csv", "w");
+    gettimeofday(&start,NULL);
+
     while (1)
     {
-        // send all pkts in the effective window
-        while (next_seqno < send_base + window_size * DATA_SIZE)
-        {
-            printf("---------------------------------------------------------------------------------\n");
+        gettimeofday(&now,NULL);
+        fprintf(plot, "%f %f %lu \n", window_size, ssthresh, (now.tv_sec-start.tv_sec)*1000000 + (now.tv_usec-start.tv_usec));
 
+        // send all pkts in the effective window
+        printf("*** Sending packets in the effective window ..\n");
+        while (next_seqno < send_base + (int)(window_size) * DATA_SIZE)
+        {
             // start the timer if not alr started
             if (timer_on == 0) start_timer();
 
-            printf("current send_base: %d \n", send_base);
+            // printf("current send_base: %d \n", send_base);
 
             // locate the pointer to be read at next_seqno
             fseek(fp, next_seqno, SEEK_SET);
@@ -167,36 +230,21 @@ int main(int argc, char **argv)
             if (len <= 0)
             {
                 VLOG(INFO, "End Of File read");
-                sndpkt = make_packet(0);
-                VLOG(DEBUG, "Sending packet of sequence number %d of data size %d to %s",
-                     next_seqno, len, inet_ntoa(serveraddr.sin_addr));
-                sendto(sockfd, sndpkt, TCP_HDR_SIZE, 0,
-                       (const struct sockaddr *)&serveraddr, serverlen);
-                printf("-------------------------------------------------------------------------------\n");
+                send_packet(buffer, 0, 0);
                 break;
             }
 
-            // make the pkt to send
-            sndpkt = make_packet(len);
-            memcpy(sndpkt->data, buffer, len);
-            sndpkt->hdr.seqno = next_seqno;
-            VLOG(DEBUG, "Sending packet of sequence number %d of data size %d to %s",
-                 next_seqno, len, inet_ntoa(serveraddr.sin_addr));
-
-            if (sendto(sockfd, sndpkt, TCP_HDR_SIZE + get_data_size(sndpkt), 0,
-                       (const struct sockaddr *)&serveraddr, serverlen) < 0)
-            {
-                error("sendto");
-            }
+            // send pkt
+            send_packet(buffer, len, next_seqno);
 
             // increment the next sequence number to be sent
             next_seqno += len;
-
-            free(sndpkt);
-            printf("---------------------------------------------------------------------------------\n");
         }
+        // printf("*** Finish sending packets in effective window ..\n");
 
-        printf("Expected sequence number: %d \n", exp_seqno);
+        printf("Sequence number expected: %d \n", exp_seqno);
+
+        printf("Waiting for ACK from receiver...\n");
 
         // wait for ACK
         if (recvfrom(sockfd, buffer, MSS_SIZE, 0,
@@ -213,11 +261,27 @@ int main(int argc, char **argv)
 
         assert(get_data_size(recvpkt) <= DATA_SIZE);
 
+        // increase window size when an ACK is received
+        increment_window();
+        if (window_size == ssthresh && cong_state == 0) {
+            cong_state = 1;
+            printf("***Window size reaches ssthresh, In Slow Start and Entering Congestion Avoidance mode\n");
+        }
+
         // if receive ack for last pkt
-        if (recvpkt->hdr.ackno < exp_seqno) {
-            printf("All packets sent successfully\n");
+        if (recvpkt->hdr.ackno % DATA_SIZE > 0) {
+            printf("***All packets sent successfully\n");
             stop_timer();
             break;
+        }
+
+        if (recvpkt->hdr.ackno == send_base) {
+            // printf("1 more dup ACK with ackno = %d received!\n", recvpkt->hdr.ackno);
+            dup_cnt += 1;
+            if (dup_cnt == 3) {
+                printf("***3 dup ACKs received, with ackno = %d, packet loss detected!\n", recvpkt->hdr.ackno);     
+                transit();
+            }
         }
 
         // if ACK number from the receiver is greater than the expected sequence number then move the window to the new position
@@ -225,6 +289,7 @@ int main(int argc, char **argv)
         if (exp_seqno <= recvpkt->hdr.ackno)
         {
             send_base = recvpkt->hdr.ackno;
+            dup_cnt = 1; // reset count for dup ACKs 
             exp_seqno = send_base + DATA_SIZE;
             stop_timer();
             // start timer for unacked pkts
@@ -232,5 +297,6 @@ int main(int argc, char **argv)
                 start_timer();
         }
     }
+    fclose(plot);
     return 0;
 }
