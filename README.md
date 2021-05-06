@@ -1,5 +1,6 @@
 # TCP_Long-Phan_Long-Nguyen
-A project that implements TCP reliable data transfer protocl and congestion control
+A project that implements TCP reliable data transfer protocl and congestion control.
+
 **Students**:
 - Long Phan (lvp243)
 - Long Nguyen (lhn232)
