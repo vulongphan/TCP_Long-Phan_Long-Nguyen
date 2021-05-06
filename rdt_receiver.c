@@ -114,13 +114,11 @@ int main(int argc, char **argv)
     cur_seqno = 0; 
     ind = -1;
 
-    // need a buffer size = N * DATA_SIZE to store out-of-order pkts
-    // note that these out-of-order pkts are in increasing sequence
-    // upon receiving out-of-order pkts (recvpkt->hdr.seqno - cur_seqno > DATA_SIZE) we store the data in a buffer
-    // and the corresponsing sequence number in seqnos array of the same size
-    // upon receiving an expected pkt (recvpkt->hdr.seqno - cur_seqno <= DATA_SIZE), we look into the buffer 
+    // Need a buffer to store out-of-order pkts
+    // Upon receiving out-of-order pkts (recvpkt->hdr.seqno - cur_seqno > DATA_SIZE) we store these pkts in a buffer
+    // Upon receiving an expected pkt (recvpkt->hdr.seqno - cur_seqno <= DATA_SIZE), we look into the buffer 
     // to find pkts that are in-order to this pkt and write all these pkts to file
-    // then update buffer and seqnos array
+    
     while (1)
     {
         printf("------------------------------------------------------------------\n");
